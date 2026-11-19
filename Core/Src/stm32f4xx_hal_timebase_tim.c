@@ -47,15 +47,8 @@ HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
   /* Get clock configuration */
   HAL_RCC_GetClockConfig(&clkconfig, &pFLatency);
 
-  /* Compute TIM11 clock (TIM11 is on APB2; x2 if the APB2 prescaler is not 1) */
-  if (clkconfig.APB2CLKDivider == RCC_HCLK_DIV1)
-  {
-    uwTimclock = HAL_RCC_GetPCLK2Freq();
-  }
-  else
-  {
-    uwTimclock = 2UL * HAL_RCC_GetPCLK2Freq();
-  }
+  /* Compute TIM11 clock */
+      uwTimclock = HAL_RCC_GetPCLK2Freq();
 
   /* Compute the prescaler value to have TIM11 counter clock equal to 1MHz */
   uwPrescalerValue = (uint32_t) ((uwTimclock / 1000000U) - 1U);
@@ -78,12 +71,13 @@ HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
   status = HAL_TIM_Base_Init(&htim11);
   if (status == HAL_OK)
   {
+
     /* Start the TIM time Base generation in interrupt mode */
     status = HAL_TIM_Base_Start_IT(&htim11);
     if (status == HAL_OK)
     {
-      /* Enable the TIM11 global Interrupt */
-      HAL_NVIC_EnableIRQ(TIM1_TRG_COM_TIM11_IRQn);
+    /* Enable the TIM11 global Interrupt */
+        HAL_NVIC_EnableIRQ(TIM1_TRG_COM_TIM11_IRQn);
       /* Configure the SysTick IRQ priority */
       if (TickPriority < (1UL << __NVIC_PRIO_BITS))
       {
@@ -98,7 +92,7 @@ HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
     }
   }
 
-  /* Return function status */
+ /* Return function status */
   return status;
 }
 
@@ -125,3 +119,4 @@ void HAL_ResumeTick(void)
   /* Enable TIM11 Update interrupt */
   __HAL_TIM_ENABLE_IT(&htim11, TIM_IT_UPDATE);
 }
+
