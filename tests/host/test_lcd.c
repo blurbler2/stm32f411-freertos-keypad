@@ -131,7 +131,7 @@ static void expect_row(uint8_t row, const char *expected)
 
 int main(void)
 {
-    I2C_HandleTypeDef hi2c = { 1 };
+    I2C_HandleTypeDef hi2c = { .id = 1, .hdmatx = NULL };
     lcd_i2c_t lcd;
     lcd_i2c_config_t cfg = { .hi2c = &hi2c, .address = SIM_ADDR, .cols = 16, .rows = 2 };
 

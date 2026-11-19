@@ -45,15 +45,6 @@ typedef struct {
     uint8_t action;      /* app_led_action_t  */
 } app_led_msg_t;
 
-/* ---- Message sent to the display task ---- */
-#define APP_LCD_COLS   16
-#define APP_LCD_ROWS   2
-
-typedef struct {
-    uint8_t row;                      /* 0 .. APP_LCD_ROWS-1          */
-    char    text[APP_LCD_COLS + 1];   /* zero-terminated              */
-} app_display_msg_t;
-
 /* ---- Trace tags (logic analyser channel = tag, see mytrace.h) ---- */
 #define APP_TAG_KEYPAD_TASK   1
 #define APP_TAG_KEY_TASK      2
@@ -70,9 +61,10 @@ void App_Init(void);
 void App_Log(const char *text);
 
 /**
- * Show a text in one row of the LCD (0 = top row). The text is copied into
- * the display queue and written by the DisplayTask, so this can be called
- * from any task and never waits for the display. Not for ISRs.
+ * Show a text in one row of the 20x4 LCD (0 = top row, the rest of the row is
+ * cleared). The text is copied into the queue of the LCD driver (lcd1602) and
+ * written by its gatekeeper task, so this can be called from any task and
+ * never waits for the display. Not for ISRs.
  * Longer texts are clipped to the width of the display.
  */
 void App_Display(uint8_t row, const char *text);

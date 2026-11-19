@@ -1,10 +1,11 @@
 # STM32F411 FreeRTOS Keypad and LCD Demo
 
 A small FreeRTOS project for the **STM32F411E-DISCO** (32F411EDISCOVERY, MB1115) that reads a
-**4x4 key matrix** with a reusable keypad library, shows the key events on a **16x2 I2C LCD** with
-a reusable LCD library and drives the four on-board LEDs.
+**4x4 key matrix** with a reusable keypad library, shows the key events on a **20x4 I2C LCD**
+(HD44780 behind a PCF8574T) and drives the four on-board LEDs.
 It combines the building blocks from the RTOS course in one project: tasks, queues with a message
-struct, a binary semaphore given from an interrupt, a mutex for a shared resource (UART) and
+struct, a binary semaphore given from an interrupt, mutexes for shared resources (UART, I2C bus),
+DMA with a semaphore from the "transfer complete" interrupt, a gatekeeper task for the display and
 task-switch tracing for a logic analyser.
 
 ```mermaid
@@ -18,10 +19,10 @@ flowchart LR
     BT -- app_led_msg_t --> Q2
     Q2 --> LED[LedTask]
     LED --> LEDS[LD3..LD6]
-    KEY -- app_display_msg_t --> Q3[(display queue)]
-    BT -- app_display_msg_t --> Q3
-    Q3 --> DT[DisplayTask]
-    DT -- I2C1 --> LCD[16x2 LCD]
+    KEY -- "App_Display()" --> Q3[(LCD queue)]
+    BT -- "App_Display()" --> Q3
+    Q3 --> GK[LCD gatekeeper task<br/>lcd1602, changes every 200 ms]
+    GK -- "I2C1: bus mutex + DMA" --> LCD[20x4 LCD]
     KEY -. mutex .-> UART[USART2 log]
     BT -. mutex .-> UART
 ```
@@ -31,10 +32,11 @@ flowchart LR
 | What | State |
 |---|---|
 | Keypad library logic (debounce, hold, repeat, multi-key) | Unit-tested on the PC (`tests/host`) |
-| LCD library (init sequence, text, positioning, control) | Unit-tested on the PC against a simulated HD44780 behind a PCF8574 |
+| LCD driver `lcd1602` (20x4, gatekeeper task, I2C bus mutex, DMA, timing diagram) | Unit-tested on the PC against a simulated HD44780 behind a PCF8574, with mocked FreeRTOS and DMA interrupt |
+| Older LCD library `lcd_i2c` (blocking, no RTOS) | Unit-tested on the PC; no longer used by the application |
 | Complete firmware | Compiles and links for the STM32F411VE with arm-none-eabi-gcc against ST's HAL and FreeRTOS 10.3.1 |
-| Running on the real board | **Not tested yet** |
-| `.ioc` file | **Written by hand, not yet opened in STM32CubeMX.** If it does not load, follow the manual steps in [docs/cubemx-setup.md](docs/cubemx-setup.md) |
+| Running on the real board | Keypad, LEDs and the 20x4 LCD with `lcd1602` (behind the level shifter) work; the LCD transfers run via DMA (row 4 shows `I2C: DMA`) |
+| `.ioc` file | Opened in STM32CubeMX 6.18.1 and generated, including the DMA channel for I2C1 (I2C1_TX, DMA1 Stream 6) and the I2C1 event/error interrupts (see [docs/cubemx-setup.md](docs/cubemx-setup.md), B5/B6) |
 
 ## What it does
 
@@ -47,13 +49,18 @@ flowchart LR
 | Any key | Shown in the second LCD row and logged on USART2, e.g. `Key 5 PRESS`, `Key 5 HOLD`, `Key 5 RELEASE` |
 | Blue user button B1 | Toggle all LEDs (interrupt + semaphore), `Button B1` on the LCD |
 
-The LCD is optional. Without it the rest works the same, and the log says `LCD not found`.
+The fourth LCD row shows `I2C: DMA` or `I2C: blocking`, i.e. whether the LCD driver could use DMA.
+
+The LCD is optional. Without it the rest works the same, and the log says `LCD not found`. When
+the display answers, the log says `LCD found, I2C with DMA`, or why it falls back to blocking I2C,
+e.g. `LCD found, I2C blocking: no DMA channel for I2C TX`.
 
 ## Hardware
 
 - STM32F411E-DISCO board (STM32F411VET6)
 - 4x4 matrix keypad with 8-pin header, 8 jumper wires
-- 16x2 character LCD (HD44780) with PCF8574 I2C backpack, 4 jumper wires
+- 20x4 character LCD TC2004A-01 (HD44780) with PCF8574T I2C module
+- Bidirectional level shifter 3.3 V / 5 V (at least 2 channels), jumper wires
 - Optional: 8-channel logic analyser, USB-UART adapter (3.3 V) for the log output
 
 ### Wiring
@@ -101,19 +108,27 @@ each group.
 
 ### LCD wiring
 
-| Backpack pin | STM32F411E-DISCO |
-|---|---|
-| GND | GND |
-| VCC | 5V |
-| SDA | PB7 (I2C1_SDA) |
-| SCL | PB8 (I2C1_SCL) |
+The display runs on 5 V, the STM32 on 3 V. A level shifter sits between the two I2C lines:
 
-- The display needs 5 V. The pull-up resistors on the backpack then pull SDA and SCL to 5 V,
-  which is the reason for PB7/PB8: both are 5 V tolerant, and unlike PB6/PB9 they are not
-  connected to the I2C bus of the on-board audio chip and accelerometer.
-- The I2C address is found automatically (usually `0x27`, or `0x3F` with a PCF8574A).
+| STM32F411E-DISCO | Level shifter | I2C module of the LCD |
+|---|---|---|
+| 3V | LV | |
+| 5V | HV | VCC |
+| GND | GND (both sides, if it has two GND pins) | GND |
+| PB7 (I2C1_SDA) | LV1 ↔ HV1 | SDA |
+| PB8 (I2C1_SCL) | LV2 ↔ HV2 | SCL |
+
+- **All grounds must be connected**: STM32, level shifter and display. Without GND the level
+  shifter does not work.
+- Every pin marked `3V` on the headers P1/P2 is the same supply, any of them works for LV. Any
+  `GND` pin works as well.
+- This project uses **PB7/PB8**, not PB6/PB9 as on the lecture slides: on the STM32F411E-DISCO,
+  PB6/PB9 are the I2C bus of the on-board audio chip and accelerometer. PB7 and PB8 are 5 V
+  tolerant, so the display would also work without the level shifter.
+- The I2C address is set in `lcd1602.h`: `0x27` for the PCF8574T, `0x3F` for a PCF8574AT.
 - If the backlight is on but no text is visible, turn the **contrast potentiometer** on the
-  backpack. This is the most common "it does not work".
+  module. This is the most common "it does not work".
+- Why the level shifter is needed and how it works: [docs/lcd1602-library.md](docs/lcd1602-library.md#2-wiring-with-the-level-shifter-pegelwandler).
 
 | Other signal | STM32 pin |
 |---|---|
@@ -145,14 +160,15 @@ pulled low. PA2 can be decoded as UART (115200 baud).
 │   ├── Inc
 │   │   ├── keypad.h                keypad library: core (HAL only, no RTOS)
 │   │   ├── keypad_rtos.h           keypad library: FreeRTOS wrapper (scan task + queue)
-│   │   ├── lcd_i2c.h               LCD library: HD44780 with PCF8574 I2C backpack
+│   │   ├── lcd1602.h               LCD driver used by the app: 20x4, gatekeeper task, I2C mutex, DMA
+│   │   ├── lcd_i2c.h               older LCD library (blocking, no RTOS), not used by the app
 │   │   ├── app.h                   application: message types, App_Init()
 │   │   ├── mytrace.h               task-switch trace for the logic analyser
 │   │   ├── FreeRTOSConfig.h        CubeMX file, trace hooks in the USER CODE sections
 │   │   └── main.h, stm32f4xx_*.h   CubeMX files
 │   └── Src
 │       ├── keypad.c, keypad_rtos.c
-│       ├── lcd_i2c.c
+│       ├── lcd1602.c, lcd_i2c.c
 │       ├── app.c                   all tasks, queues, semaphore, mutex, EXTI callback
 │       ├── mytrace.c
 │       ├── main.c                  CubeMX file, calls App_Init() in a USER CODE section
@@ -161,13 +177,17 @@ pulled low. PA2 can be decoded as UART (115200 baud).
 │   ├── cubemx-setup.md             CubeMX settings step by step, with and without the .ioc
 │   ├── architecture.md             tasks, queues, priorities, timing
 │   ├── keypad-library.md           how to use the keypad library in other projects
-│   └── lcd-library.md              how to use the LCD library in other projects
-└── tests/host                      PC unit tests for both libraries (mock HAL)
+│   ├── lcd1602-library.md          LCD driver lcd1602: level shifter wiring, concepts, API
+│   ├── present-lcd-code.md         notes for presenting the LCD code
+│   ├── present-lcd-code.de.md      the same in German
+│   └── lcd-library.md              older LCD library lcd_i2c
+└── tests/host                      PC unit tests for the libraries (mock HAL, mock FreeRTOS)
 ```
 
-`Drivers/` and `Middlewares/` (HAL, CMSIS, FreeRTOS), the startup file, the linker script and the
-STM32CubeIDE project files are **not** in this repository yet. STM32CubeMX creates them on the
-first *Generate Code*. Commit them afterwards so that the repository builds on its own.
+`Drivers/` and `Middlewares/` (HAL, CMSIS, FreeRTOS), the startup file and the linker script were
+created by STM32CubeMX (*Generate Code*) and are committed. The STM32CubeIDE project files
+(`.project`, `.cproject`) are not: CubeMX recreates them on every *Generate Code*. After cloning,
+open the `.ioc` in STM32CubeMX and click **GENERATE CODE** once before building.
 
 The application code is kept out of `main.c` on purpose: CubeMX can regenerate `main.c` at any
 time, and only two lines there belong to the application (`#include "app.h"` and `App_Init();`).
@@ -177,7 +197,8 @@ time, and only two lines there belong to the application (`#include "app.h"` and
 1. Clone the repository.
 2. Open `stm32f411-freertos-keypad.ioc` in STM32CubeMX and click **GENERATE CODE**, or create the
    configuration by hand. Both ways are described in
-   [docs/cubemx-setup.md](docs/cubemx-setup.md).
+   [docs/cubemx-setup.md](docs/cubemx-setup.md). This also creates the STM32CubeIDE project files
+   `.project` and `.cproject`, which are not in the repository.
 3. Import the folder into STM32CubeIDE (*File > Import > Existing Projects into Workspace*),
    build and flash.
 4. Wire the keypad and the LCD as shown above and press keys.
@@ -195,12 +216,14 @@ with STM32CubeIDE and flashed over the ST-LINK on the board (mini-USB connector)
 
 ### In STM32CubeIDE
 
+After the first **GENERATE CODE** in STM32CubeMX (it creates `.project` and `.cproject`):
 *File > Import > Existing Projects into Workspace*, select this folder, then *Project > Build
 Project* and *Run > Run As > STM32 C/C++ Application*.
 
 ### From the command line or VS Code (macOS)
 
-**1. Full build.** Runs STM32CubeIDE without a window and creates the makefiles and the firmware
+**1. Full build.** Needs the project files `.project` and `.cproject` from the first
+**GENERATE CODE**. Runs STM32CubeIDE without a window and creates the makefiles and the firmware
 `Debug/stm32f411-freertos-keypad.elf`. Needed once, and again after adding or removing source
 files:
 
@@ -269,9 +292,28 @@ char key = keypad_rtos_wait_key(&keypad, portMAX_DELAY);
 
 Details, the event API and the version without RTOS: [docs/keypad-library.md](docs/keypad-library.md).
 
-## Using the LCD library elsewhere
+## Using the LCD driver elsewhere
 
-Copy `lcd_i2c.c/.h` into another CubeMX project that has an I2C peripheral enabled:
+`lcd1602.c/.h` (used by this application) needs FreeRTOS and an I2C peripheral. Copy both files
+into the other project and adapt only section 1 of `lcd1602.h` (I2C handle, address, display size):
+
+```c
+/* before the scheduler starts */
+lcd1602_start(NULL);                         /* NULL = the driver creates the I2C bus mutex */
+
+/* in any task - returns at once, the gatekeeper task writes the display */
+lcd1602_write_line(0, "Hello");              /* whole row, padded with spaces */
+lcd1602_print(1, 4, "world");                /* column 4, second row */
+```
+
+For DMA, add the I2C TX DMA channel and the I2C event/error interrupts in CubeMX, see the comment
+at the top of `lcd1602.h`. Without them the driver works with blocking I2C.
+Wiring, background and API: [docs/lcd1602-library.md](docs/lcd1602-library.md); notes for
+presenting the code: [docs/present-lcd-code.md](docs/present-lcd-code.md) (German:
+[docs/present-lcd-code.de.md](docs/present-lcd-code.de.md)).
+
+The older `lcd_i2c.c/.h` needs no RTOS, but it waits for every transfer. Copy it into another
+CubeMX project that has an I2C peripheral enabled:
 
 ```c
 static lcd_i2c_t lcd;
@@ -289,7 +331,9 @@ Details and the use with FreeRTOS (display task with a queue): [docs/lcd-library
 
 ## Tests
 
-The logic of both libraries can be tested on a PC without the board:
+The logic of the libraries (keypad, `lcd1602`, `lcd_i2c`) can be tested on a PC without the board.
+The LCD tests feed every I2C byte into a simulated HD44780; for `lcd1602` the simulator also
+checks the timing diagram (RS valid before E rises, data held when E falls):
 
 ```
 make -C tests/host

@@ -1,5 +1,10 @@
 # LCD library
 
+> The application now uses the FreeRTOS driver `lcd1602` (gatekeeper task, I2C bus mutex, DMA):
+> see [lcd1602-library.md](lcd1602-library.md).
+> This page describes the older `lcd_i2c` library. It stays in the project as a standalone,
+> blocking driver without RTOS and is still unit-tested in `tests/host`.
+
 Driver for HD44780 character displays (16x2, 20x4, ...) that are connected through a PCF8574 I2C
 backpack. Files: `lcd_i2c.h`, `lcd_i2c.c`. It needs the STM32 HAL with the I2C module and no RTOS.
 

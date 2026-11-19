@@ -27,14 +27,29 @@ void          HAL_GPIO_WritePin(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState 
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *port, uint16_t pin);
 void          HAL_GPIO_Init(GPIO_TypeDef *port, GPIO_InitTypeDef *init);
 
-/* ---- I2C (used by lcd_i2c) ---- */
+/* ---- I2C (used by lcd_i2c and lcd1602) ---- */
 typedef enum { HAL_OK = 0, HAL_ERROR, HAL_BUSY, HAL_TIMEOUT } HAL_StatusTypeDef;
-typedef struct { int id; } I2C_HandleTypeDef;
+typedef struct {
+    int   id;
+    void *hdmatx;        /* DMA handle linked by CubeMX (lcd1602 checks it) */
+} I2C_HandleTypeDef;
 
 HAL_StatusTypeDef HAL_I2C_Master_Transmit(I2C_HandleTypeDef *hi2c, uint16_t dev_address,
                                           uint8_t *data, uint16_t size, uint32_t timeout);
 HAL_StatusTypeDef HAL_I2C_IsDeviceReady(I2C_HandleTypeDef *hi2c, uint16_t dev_address,
                                         uint32_t trials, uint32_t timeout);
 void              HAL_Delay(uint32_t ms);
+
+/* ---- only used by lcd1602 ---- */
+HAL_StatusTypeDef HAL_I2C_Master_Transmit_DMA(I2C_HandleTypeDef *hi2c, uint16_t dev_address,
+                                              uint8_t *data, uint16_t size);
+HAL_StatusTypeDef HAL_I2C_Init(I2C_HandleTypeDef *hi2c);
+HAL_StatusTypeDef HAL_I2C_DeInit(I2C_HandleTypeDef *hi2c);
+
+typedef enum { I2C1_EV_IRQn = 31, I2C1_ER_IRQn = 32 } IRQn_Type;
+uint32_t NVIC_GetEnableIRQ(IRQn_Type irq);
+uint32_t NVIC_GetPriority(IRQn_Type irq);
+
+#define __WEAK __attribute__((weak))     /* from CMSIS cmsis_compiler.h */
 
 #endif /* __MAIN_H */

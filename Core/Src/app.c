@@ -14,10 +14,12 @@
  *                                      |ButtonTask| ->|         |
  *                                      +----------+   +---------+
  *
- *   KeyTask / ButtonTask --app_display_msg_t--> (display queue) --> DisplayTask --> 16x2 LCD (I2C1)
+ *   KeyTask / ButtonTask --App_Display()--> lcd1602 driver: queue --> LCD gatekeeper task
+ *                                           --> I2C1 (bus mutex, DMA) --> 20x4 LCD
  *
  *   KeyTask also prints every key event on USART2 (mutex protected).
- *   The DisplayTask is the only task that talks to the LCD ("display manager").
+ *   The LCD gatekeeper task inside lcd1602.c is the only task that talks to the
+ *   display; App_Display() only puts the text into its queue and never waits.
  *
  * Key assignment
  *   1..4   toggle green / orange / red / blue LED
@@ -30,7 +32,7 @@
 #include "app.h"
 #include "main.h"
 #include "keypad_rtos.h"
-#include "lcd_i2c.h"
+#include "lcd1602.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -47,14 +49,13 @@
 #define KEY_QUEUE_LEN           10u
 #define LED_QUEUE_LEN           10u
 #define BUTTON_DEBOUNCE_MS      50u
-#define DISPLAY_QUEUE_LEN       8u
-#define LCD_RETRY_MS            2000u    /* search again if no display was found */
 
 #define PRIO_KEYPAD_TASK        (tskIDLE_PRIORITY + 3)
 #define PRIO_KEY_TASK           (tskIDLE_PRIORITY + 2)
 #define PRIO_LED_TASK           (tskIDLE_PRIORITY + 2)
 #define PRIO_BUTTON_TASK        (tskIDLE_PRIORITY + 2)
-#define PRIO_DISPLAY_TASK       (tskIDLE_PRIORITY + 1)   /* the display is slow and not urgent */
+/* The LCD gatekeeper task runs at LCD1602_TASK_PRIORITY (idle + 1, lcd1602.h):
+ * the display is slow and not urgent */
 
 /* Keypad wiring - the pin names come from the CubeMX labels in main.h */
 static const keypad_pin_t kp_rows[4] = {
@@ -86,14 +87,11 @@ static const keypad_config_t kp_cfg = {
 /* ------------------------------------------------------------------ */
 
 extern UART_HandleTypeDef huart2;        /* created by CubeMX in main.c */
-extern I2C_HandleTypeDef  hi2c1;         /* created by CubeMX in main.c */
 
 static keypad_rtos_t     keypad;         /* keypad instance + scan task + key queue */
 static QueueHandle_t     ledQueue;       /* app_led_msg_t                           */
 static SemaphoreHandle_t buttonSem;      /* given from the EXTI interrupt           */
 static SemaphoreHandle_t uartMutex;      /* protects USART2 (shared resource)       */
-static QueueHandle_t     displayQueue;   /* app_display_msg_t                       */
-static lcd_i2c_t         lcd;            /* only used by the DisplayTask            */
 
 static GPIO_TypeDef *const led_port[APP_LED_COUNT] = {
     LED_GREEN_GPIO_Port, LED_ORANGE_GPIO_Port, LED_RED_GPIO_Port, LED_BLUE_GPIO_Port
@@ -105,7 +103,6 @@ static const uint16_t led_pin[APP_LED_COUNT] = {
 static void KeyTask(void *pvParameters);
 static void LedTask(void *pvParameters);
 static void ButtonTask(void *pvParameters);
-static void DisplayTask(void *pvParameters);
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -125,16 +122,9 @@ void App_Log(const char *text)
 
 void App_Display(uint8_t row, const char *text)
 {
-    app_display_msg_t msg;
-
-    if (displayQueue == NULL || text == NULL || row >= APP_LCD_ROWS) {
-        return;
-    }
-    msg.row = row;
-    strncpy(msg.text, text, APP_LCD_COLS);
-    msg.text[APP_LCD_COLS] = '\0';
-    /* Copied into the queue. If the queue is full the message is dropped. */
-    (void)xQueueSend(displayQueue, &msg, 0);
+    /* Copied into the queue of the LCD driver. If it is full, the text is
+     * dropped - the caller never waits for the display. */
+    (void)lcd1602_write_line(row, text);
 }
 
 static void send_led(app_sender_t sender, app_led_t led, app_led_action_t action)
@@ -183,8 +173,7 @@ void App_Init(void)
     uartMutex = xSemaphoreCreateMutex();
     buttonSem = xSemaphoreCreateBinary();
     ledQueue  = xQueueCreate(LED_QUEUE_LEN, sizeof(app_led_msg_t));
-    displayQueue = xQueueCreate(DISPLAY_QUEUE_LEN, sizeof(app_display_msg_t));
-    if (uartMutex == NULL || buttonSem == NULL || ledQueue == NULL || displayQueue == NULL) {
+    if (uartMutex == NULL || buttonSem == NULL || ledQueue == NULL) {
         Error_Handler();          /* heap too small? -> configTOTAL_HEAP_SIZE */
     }
 
@@ -210,10 +199,15 @@ void App_Init(void)
     }
     vTaskSetApplicationTaskTag(handle, (TaskHookFunction_t)APP_TAG_BUTTON_TASK);
 
-    /* Not traced: there are only four trace channels */
-    if (xTaskCreate(DisplayTask, "DisplayTask", 256, NULL, PRIO_DISPLAY_TASK, NULL) != pdPASS) {
+    /* LCD driver: creates its queue, the I2C bus mutex and the gatekeeper task
+     * (not traced: there are only four trace channels). The display itself is
+     * initialised by the gatekeeper task once the scheduler runs. */
+    if (lcd1602_start(NULL) != LCD1602_OK) {
         Error_Handler();
     }
+    App_Display(0, "Keypad demo");
+    App_Display(1, "Press a key");
+    App_Display(3, lcd1602_dma_active() ? "I2C: DMA" : "I2C: blocking");
 }
 
 /* ------------------------------------------------------------------ */
@@ -296,61 +290,28 @@ static void ButtonTask(void *pvParameters)
     }
 }
 
-/* Delay for the LCD driver: lets other tasks run instead of busy-waiting */
-static void lcd_delay(uint32_t ms)
-{
-    vTaskDelay(pdMS_TO_TICKS(ms) + 1);
-}
-
-/** Looks for the display and initialises it. @return true on success. */
-static bool display_start(void)
-{
-    lcd_i2c_config_t cfg = {
-        .hi2c       = &hi2c1,
-        .address    = 0,
-        .cols       = APP_LCD_COLS,
-        .rows       = APP_LCD_ROWS,
-        .timeout_ms = 20,
-        .delay_ms   = lcd_delay
-    };
-
-    cfg.address = lcd_i2c_find(&hi2c1);          /* 0x27, 0x3F, ... */
-    if (cfg.address == 0 || lcd_init(&lcd, &cfg) != LCD_OK) {
-        return false;
-    }
-    (void)lcd_write_line(&lcd, 0, "Keypad demo");
-    (void)lcd_write_line(&lcd, 1, "Press a key");
-    return true;
-}
-
 /**
- * Display manager: the only task that uses the LCD. All other tasks send
- * their text through the display queue (see App_Display).
- * The application also runs without a display; the task then tries again
- * every 2 s (e.g. after a loose wire).
+ * Called by the LCD gatekeeper task when the display starts or stops answering
+ * (replaces the empty weak version in lcd1602.c). The application also runs
+ * without a display; the driver then tries again every 2 s.
  */
-static void DisplayTask(void *pvParameters)
+void lcd1602_ready_changed(bool ready)
 {
-    app_display_msg_t msg;
-    bool ready;
-    (void)pvParameters;
+    char line[80];
 
-    ready = display_start();
-    App_Log(ready ? "LCD found\r\n" : "LCD not found\r\n");
-
-    for (;;) {
-        if (!ready) {
-            vTaskDelay(pdMS_TO_TICKS(LCD_RETRY_MS));
-            (void)xQueueReset(displayQueue);     /* drop texts nobody could see */
-            ready = display_start();
-            continue;
-        }
-        if (xQueueReceive(displayQueue, &msg, portMAX_DELAY) == pdPASS) {
-            if (lcd_write_line(&lcd, msg.row, msg.text) != LCD_OK) {
-                ready = false;                   /* display unplugged? search again */
-            }
-        }
+    if (!ready) {
+        App_Log("LCD not found\r\n");
+        return;
     }
+    if (lcd1602_dma_active()) {
+        App_Log("LCD found, I2C with DMA\r\n");
+        return;
+    }
+    /* One App_Log() call, so that no other message ends up in the middle */
+    strcpy(line, "LCD found, I2C blocking: ");
+    strncat(line, lcd1602_dma_problem(), sizeof(line) - strlen(line) - 3u);
+    strcat(line, "\r\n");
+    App_Log(line);
 }
 
 /* ------------------------------------------------------------------ */

@@ -12,8 +12,8 @@ flowchart TD
     B1 --> B2[B2: SYS: Serial Wire, timebase TIM11]
     B2 --> B3[B3: Assign the 17 pins]
     B3 --> B4[B4: GPIO modes and labels]
-    B4 --> B5[B5: NVIC: EXTI line0, priority 5]
-    B5 --> B6[B6: USART2 asynchronous, I2C1 on PB7/PB8]
+    B4 --> B5[B5: NVIC: EXTI line0, I2C1, DMA: priority 5]
+    B5 --> B6[B6: USART2 asynchronous, I2C1 on PB7/PB8 with TX DMA]
     B6 --> B7[B7: FREERTOS, CMSIS_V2]
     B7 --> B8[B8: Project Manager settings]
     B8 --> B9[B9: GENERATE CODE]
@@ -23,8 +23,8 @@ flowchart TD
     B11 --> C
 ```
 
-> The `.ioc` in this repository was written by hand and has not been opened in STM32CubeMX yet.
-> It declares an old CubeMX version on purpose, so a current CubeMX offers to migrate it.
+> The `.ioc` in this repository was saved with STM32CubeMX 6.18.1. It already contains the DMA
+> channel for I2C1 and the I2C1 interrupts (B5/B6), so way A gives the complete configuration.
 
 ## A: With the `.ioc` file
 
@@ -117,9 +117,13 @@ because the code uses the names that CubeMX derives from them (`KP_ROW1_Pin`,
 | Interrupt | Enabled | Preemption priority |
 |---|---|---|
 | EXTI line0 interrupt | **yes** | **5** |
+| I2C1 event interrupt | **yes** (B6) | **5** |
+| I2C1 error interrupt | **yes** (B6) | **5** |
+| DMA1 stream6 global interrupt | **yes** (CubeMX enables it with the DMA channel, B6) | **5** |
 
-The interrupt gives a semaphore with `xSemaphoreGiveFromISR`. That is only allowed for priority
-numbers of 5 or higher. Do this step after B7 if CubeMX does not let you choose the priority yet.
+These interrupts give a semaphore with `xSemaphoreGiveFromISR`. That is only allowed for priority
+numbers of 5 or higher. Do this step after B7 if CubeMX does not let you choose the priority yet;
+the I2C1 and DMA interrupts appear in the list after B6.
 
 ### B6. Connectivity > USART2 and I2C1
 
@@ -153,6 +157,27 @@ choose `I2C1_SCL`. SDA must be on PB7. The result:
 
 PB6 must not be used: on this board PB6 and PB9 are the I2C bus of the on-board audio chip and
 accelerometer, which should not see the 5 V pull-ups of the LCD backpack.
+
+**I2C1 DMA Settings** (so that the LCD driver does not wait for the transfers)
+
+Click *Add* and set:
+
+| Setting | Value |
+|---|---|
+| DMA Request | I2C1_TX |
+| Stream | DMA1 Stream 6 |
+| Direction | Memory To Peripheral |
+| Mode | Normal |
+| Increment Address | Memory: yes, Peripheral: no |
+| Data Width | Byte / Byte |
+
+**I2C1 NVIC Settings**: enable *I2C1 event interrupt* and *I2C1 error interrupt*. The HAL needs
+them even with DMA: the event interrupt sends START and the address, and after the last byte it
+calls `HAL_I2C_MasterTxCpltCallback()`, which wakes the LCD task. Priorities: see B5.
+
+After *Generate Code*, check in `main.c` that `MX_DMA_Init()` is called **before**
+`MX_I2C1_Init()` (some CubeMX versions put it after; then the DMA does not work). The log line
+`LCD found, I2C with DMA` and `I2C: DMA` in the fourth LCD row confirm that everything is set up.
 
 ### B7. Middleware > FREERTOS
 
@@ -192,7 +217,7 @@ Copy these files from this repository into the new project. Do not copy the othe
 | `keypad_rtos.h` | `keypad_rtos.c` |
 | `app.h` | `app.c` |
 | `mytrace.h` | `mytrace.c` |
-| `lcd_i2c.h` | `lcd_i2c.c` |
+| `lcd1602.h` | `lcd1602.c` |
 
 ### B11. Paste three snippets
 
@@ -252,5 +277,8 @@ Copy these files from this repository into the new project. Do not copy the othe
 | A whole row or column is dead | One jumper wire is loose or on the wrong pin |
 | HAL timeouts never end | Timebase source is not TIM11, see B2 |
 | `hi2c1` undeclared or `I2C_HandleTypeDef` unknown | I2C1 is not enabled, see B6 |
-| Log says `LCD not found` | Wiring (SDA = PB7, SCL = PB8, VCC = 5V, GND), or SCL was left on PB6 |
+| Log says `LCD not found` | Wiring (SDA = PB7, SCL = PB8, VCC = 5V, GND), level shifter (LV = 3V, HV = 5V, GND connected), SCL left on PB6, or a PCF8574AT (address `0x3F` in `lcd1602.h`). Only with DMA: `MX_DMA_Init()` is called after `MX_I2C1_Init()` in `main.c`, see B6 |
+| Log says `LCD found, I2C blocking: no DMA channel for I2C TX` | I2C1_TX DMA not added, see B6 |
+| Log says `LCD found, I2C blocking: I2C event/error interrupt off` | I2C1 NVIC Settings, see B6 |
+| Log says `LCD found, I2C blocking: I2C interrupt priority < 5` | Priorities of the I2C1 interrupts, see B5 |
 | Backlight on, but no text | Turn the contrast potentiometer on the backpack |
