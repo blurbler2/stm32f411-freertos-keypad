@@ -16,6 +16,7 @@
 .metadata/
 *.launch
 .mxproject
+.osx.project
 .idea/
 
 # Host test binary

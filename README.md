@@ -58,22 +58,46 @@ The LCD is optional. Without it the rest works the same, and the log says `LCD n
 
 ### Wiring
 
-Keypad pins counted from left to right with the keys facing you. Most 4x4 keypads use pins 1-4
-for the rows and 5-8 for the columns. **Check yours with a multimeter**: pressing key `1` must
-connect row 1 and column 1.
+**How to count the keypad pins:** hold the keypad with the keys facing you so that the `*` key is
+in the **bottom left corner**. Pin 1 is the **leftmost** pin of the 8-pin header from this view,
+pin 8 the rightmost.
+
+```
+ ┌───┬───┬───┬───┐
+ │ 1 │ 2 │ 3 │ A │   row 1
+ ├───┼───┼───┼───┤
+ │ 4 │ 5 │ 6 │ B │   row 2
+ ├───┼───┼───┼───┤
+ │ 7 │ 8 │ 9 │ C │   row 3
+ ├───┼───┼───┼───┤
+ │ * │ 0 │ # │ D │   row 4
+ └───┴───┴───┴───┘
+  col1 col2 col3 col4
+
+   pin 1 2 3 4 5 6 7 8
+       │ │ │ │ │ │ │ │
+       └─cols┘ └─rows┘
+```
+
+On the tested keypad, pins 1-4 are the **columns** and pins 5-8 the **rows**:
 
 | Keypad pin | Signal | STM32 pin | CubeMX setting |
 |---|---|---|---|
-| 1 | Row 1 (`1 2 3 A`) | PD0 | Output open-drain, initially high |
-| 2 | Row 2 (`4 5 6 B`) | PD1 | Output open-drain, initially high |
-| 3 | Row 3 (`7 8 9 C`) | PD2 | Output open-drain, initially high |
-| 4 | Row 4 (`* 0 # D`) | PD3 | Output open-drain, initially high |
-| 5 | Column 1 | PE7 | Input, pull-up |
-| 6 | Column 2 | PE8 | Input, pull-up |
-| 7 | Column 3 | PE9 | Input, pull-up |
-| 8 | Column 4 | PE10 | Input, pull-up |
+| 1 | Column 1 (`1 4 7 *`) | PE7 | Input, pull-up |
+| 2 | Column 2 (`2 5 8 0`) | PE8 | Input, pull-up |
+| 3 | Column 3 (`3 6 9 #`) | PE9 | Input, pull-up |
+| 4 | Column 4 (`A B C D`) | PE10 | Input, pull-up |
+| 5 | Row 1 (`1 2 3 A`) | PD0 | Output open-drain, initially high |
+| 6 | Row 2 (`4 5 6 B`) | PD1 | Output open-drain, initially high |
+| 7 | Row 3 (`7 8 9 C`) | PD2 | Output open-drain, initially high |
+| 8 | Row 4 (`* 0 # D`) | PD3 | Output open-drain, initially high |
 
 No external resistors are needed. The internal pull-ups are used.
+
+Not all keypads use this order. **Check yours with a multimeter** (pressing key `1` must connect
+row 1 and column 1), or test it: if key `2` acts like `4` and `*` acts like `A` (all LEDs on),
+rows and columns are swapped. Then swap the two groups of four wires and keep the order within
+each group.
 
 ### LCD wiring
 
