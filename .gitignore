@@ -26,6 +26,8 @@ tmp/*
 /tests/host/test_keypad.exe
 /tests/host/test_lcd
 /tests/host/test_lcd.exe
+/tests/host/test_lcd1602
+/tests/host/test_lcd1602.exe
 
 # OS
 .DS_Store
