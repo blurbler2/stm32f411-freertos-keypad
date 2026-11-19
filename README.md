@@ -35,8 +35,8 @@ flowchart LR
 | LCD driver `lcd1602` (20x4, gatekeeper task, I2C bus mutex, DMA, timing diagram) | Unit-tested on the PC against a simulated HD44780 behind a PCF8574, with mocked FreeRTOS and DMA interrupt |
 | Older LCD library `lcd_i2c` (blocking, no RTOS) | Unit-tested on the PC; no longer used by the application |
 | Complete firmware | Compiles and links for the STM32F411VE with arm-none-eabi-gcc against ST's HAL and FreeRTOS 10.3.1 |
-| Running on the real board | Keypad, LEDs and the 20x4 LCD with `lcd1602` (behind the level shifter) work. Tested with blocking I2C, because the DMA channel is not set up yet (next row) |
-| `.ioc` file | Opened in STM32CubeMX and generated. The DMA channel for I2C1 is **not added yet**; until then the LCD driver uses blocking I2C (see [docs/cubemx-setup.md](docs/cubemx-setup.md), B6) |
+| Running on the real board | Keypad, LEDs and the 20x4 LCD with `lcd1602` (behind the level shifter) work; the LCD transfers run via DMA (row 4 shows `I2C: DMA`) |
+| `.ioc` file | Opened in STM32CubeMX 6.18.1 and generated, including the DMA channel for I2C1 (I2C1_TX, DMA1 Stream 6) and the I2C1 event/error interrupts (see [docs/cubemx-setup.md](docs/cubemx-setup.md), B5/B6) |
 
 ## What it does
 

@@ -91,7 +91,7 @@ sequenceDiagram
 | Interrupt | Priority | Use |
 |---|---|---|
 | EXTI0 (PA0, user button) | 5 | Gives the button semaphore with `xSemaphoreGiveFromISR` |
-| I2C1 event, I2C1 error, DMA1 stream 6 | 5 | I2C transfer with DMA for the LCD; the "transfer complete" callback gives the semaphore of the LCD driver. Only after the DMA is added in CubeMX |
+| I2C1 event, I2C1 error, DMA1 stream 6 | 5 | I2C transfer with DMA for the LCD; the "transfer complete" callback gives the semaphore of the LCD driver |
 | TIM11 | 15 | HAL time base (`HAL_GetTick`), because FreeRTOS owns the SysTick |
 | SysTick, PendSV | 15 | FreeRTOS tick and context switch |
 

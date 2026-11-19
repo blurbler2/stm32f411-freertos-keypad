@@ -23,12 +23,8 @@ flowchart TD
     B11 --> C
 ```
 
-> The `.ioc` in this repository was written by hand and has not been opened in STM32CubeMX yet.
-> It declares an old CubeMX version on purpose, so a current CubeMX offers to migrate it.
-
-> The `.ioc` does **not** contain the DMA channel for I2C1 yet. Add it with the steps
-> *I2C1 DMA Settings* and *I2C1 NVIC Settings* in B6 and generate the code again. Until then the
-> LCD driver works with blocking I2C, and the log says why it does not use DMA.
+> The `.ioc` in this repository was saved with STM32CubeMX 6.18.1. It already contains the DMA
+> channel for I2C1 and the I2C1 interrupts (B5/B6), so way A gives the complete configuration.
 
 ## A: With the `.ioc` file
 
