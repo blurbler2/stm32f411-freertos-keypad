@@ -18,6 +18,8 @@
 .mxproject
 .osx.project
 .idea/
+tmp/
+tmp/*
 
 # Host test binary
 /tests/host/test_keypad
