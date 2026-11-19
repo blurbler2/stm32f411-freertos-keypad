@@ -158,6 +158,67 @@ time, and only two lines there belong to the application (`#include "app.h"` and
    build and flash.
 4. Wire the keypad and the LCD as shown above and press keys.
 
+## Build and run
+
+The project is an STM32CubeIDE project (no CMake). It is built with the GCC toolchain that comes
+with STM32CubeIDE and flashed over the ST-LINK on the board (mini-USB connector) with OpenOCD.
+
+| Tool | Used for |
+|---|---|
+| STM32CubeIDE | Build (also headless, without opening the IDE) and its GCC toolchain |
+| OpenOCD (`brew install open-ocd`) | Flash and debug over the on-board ST-LINK |
+| VS Code with *Cortex-Debug* (optional) | Editing, flashing and debugging with breakpoints |
+
+### In STM32CubeIDE
+
+*File > Import > Existing Projects into Workspace*, select this folder, then *Project > Build
+Project* and *Run > Run As > STM32 C/C++ Application*.
+
+### From the command line or VS Code (macOS)
+
+**1. Full build.** Runs STM32CubeIDE without a window and creates the makefiles and the firmware
+`Debug/stm32f411-freertos-keypad.elf`. Needed once, and again after adding or removing source
+files:
+
+```bash
+/Applications/STM32CubeIDE.app/Contents/MacOS/STM32CubeIDE --launcher.suppressErrors -nosplash \
+  -application org.eclipse.cdt.managedbuilder.core.headlessbuild \
+  -data "$HOME/.stm32cubeide-headless-ws" -import "$PWD" -build stm32f411-freertos-keypad/Debug
+```
+
+**2. Fast rebuild.** After the first full build, `make` in `Debug/` is enough. Put the
+STM32CubeIDE toolchain first in `PATH`, because other `arm-none-eabi-gcc` installations (for
+example Homebrew's) may be a different version or lack `arm-none-eabi-size` and the linker:
+
+```bash
+PATH="$(ls -d /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/*gnu-tools-for-stm32*/tools/bin | tail -1):$PATH" \
+  make -C Debug -j8 all
+```
+
+**3. Flash.** Connect the board with the mini-USB cable (ST-LINK) and run:
+
+```bash
+openocd -f board/stm32f4discovery.cfg \
+  -c "program {$PWD/Debug/stm32f411-freertos-keypad.elf} verify reset exit"
+```
+
+The firmware starts right after the reset. `Error: open failed` means that OpenOCD does not find
+the ST-LINK: check the USB cable (it must be the mini-USB connector, not the micro-USB one).
+
+**4. Debug (VS Code).** With the *Cortex-Debug* extension, a launch configuration with
+`"servertype": "openocd"`, `"configFiles": ["board/stm32f4discovery.cfg"]`, `"rtos": "FreeRTOS"`
+and `"gdbPath"` pointing to `arm-none-eabi-gdb` in the STM32CubeIDE toolchain folder from step 2
+stops at `main()` and shows the FreeRTOS tasks. The commands above can be added as VS Code tasks
+(`.vscode/` is not in the repository).
+
+### Seeing the output
+
+- Keys `1`..`4` toggle the LEDs: the quickest check that the keypad wiring is right.
+- The UART log (USART2, PA2/PA3, 115200 8N1) is **not** routed through the ST-LINK USB cable on
+  this board. Connect a 3.3 V USB-UART adapter (adapter RX to PA2, TX to PA3, GND to GND) and open
+  it with a serial terminal, for example the VS Code *Serial Monitor* or
+  `screen /dev/tty.usbserial-* 115200`.
+
 ## Using the keypad library elsewhere
 
 Copy `keypad.c/.h` (and `keypad_rtos.c/.h` for FreeRTOS) into another CubeMX project:
