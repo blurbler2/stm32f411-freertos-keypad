@@ -8,6 +8,11 @@ struct, a binary semaphore given from an interrupt, mutexes for shared resources
 DMA with a semaphore from the "transfer complete" interrupt, a gatekeeper task for the display and
 task-switch tracing for a logic analyser.
 
+<p align="center">
+  <img src="docs/demo-lcd-and-keypad.jpg" width="450"
+       alt="Demo: STM32F411E-DISCO with the 4x4 keypad and the 20x4 LCD, which shows 'Keypad demo' and the last key event 'Key 9 RELEASE'">
+</p>
+
 ```mermaid
 flowchart LR
     KP[4x4 keypad] --> KT[KeypadTask<br/>scan every 10 ms]
