@@ -184,9 +184,10 @@ pulled low. PA2 can be decoded as UART (115200 baud).
 └── tests/host                      PC unit tests for the libraries (mock HAL, mock FreeRTOS)
 ```
 
-`Drivers/` and `Middlewares/` (HAL, CMSIS, FreeRTOS), the startup file, the linker script and the
-STM32CubeIDE project files were created by STM32CubeMX (*Generate Code*) and are committed, so the
-repository builds on its own.
+`Drivers/` and `Middlewares/` (HAL, CMSIS, FreeRTOS), the startup file and the linker script were
+created by STM32CubeMX (*Generate Code*) and are committed. The STM32CubeIDE project files
+(`.project`, `.cproject`) are not: CubeMX recreates them on every *Generate Code*. After cloning,
+open the `.ioc` in STM32CubeMX and click **GENERATE CODE** once before building.
 
 The application code is kept out of `main.c` on purpose: CubeMX can regenerate `main.c` at any
 time, and only two lines there belong to the application (`#include "app.h"` and `App_Init();`).
@@ -196,7 +197,8 @@ time, and only two lines there belong to the application (`#include "app.h"` and
 1. Clone the repository.
 2. Open `stm32f411-freertos-keypad.ioc` in STM32CubeMX and click **GENERATE CODE**, or create the
    configuration by hand. Both ways are described in
-   [docs/cubemx-setup.md](docs/cubemx-setup.md).
+   [docs/cubemx-setup.md](docs/cubemx-setup.md). This also creates the STM32CubeIDE project files
+   `.project` and `.cproject`, which are not in the repository.
 3. Import the folder into STM32CubeIDE (*File > Import > Existing Projects into Workspace*),
    build and flash.
 4. Wire the keypad and the LCD as shown above and press keys.
@@ -214,12 +216,14 @@ with STM32CubeIDE and flashed over the ST-LINK on the board (mini-USB connector)
 
 ### In STM32CubeIDE
 
+After the first **GENERATE CODE** in STM32CubeMX (it creates `.project` and `.cproject`):
 *File > Import > Existing Projects into Workspace*, select this folder, then *Project > Build
 Project* and *Run > Run As > STM32 C/C++ Application*.
 
 ### From the command line or VS Code (macOS)
 
-**1. Full build.** Runs STM32CubeIDE without a window and creates the makefiles and the firmware
+**1. Full build.** Needs the project files `.project` and `.cproject` from the first
+**GENERATE CODE**. Runs STM32CubeIDE without a window and creates the makefiles and the firmware
 `Debug/stm32f411-freertos-keypad.elf`. Needed once, and again after adding or removing source
 files:
 

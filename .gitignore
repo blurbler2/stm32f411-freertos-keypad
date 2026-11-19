@@ -21,6 +21,13 @@
 tmp/
 tmp/*
 
+# STM32CubeIDE project files: STM32CubeMX recreates them on every "Generate Code"
+/.project
+/.cproject
+# CubeMX temporary folder, and the RAM linker script the build does not use
+/MXTmpFiles/
+/STM32F411VETX_RAM.ld
+
 # Host test binary
 /tests/host/test_keypad
 /tests/host/test_keypad.exe
