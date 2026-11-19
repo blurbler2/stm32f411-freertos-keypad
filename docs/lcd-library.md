@@ -1,7 +1,7 @@
 # LCD library
 
 > The application now uses the FreeRTOS driver `lcd1602` (gatekeeper task, I2C bus mutex, DMA):
-> see the comment at the top of `Core/Inc/lcd1602.h` and [architecture.md](architecture.md).
+> see [lcd1602-library.md](lcd1602-library.md).
 > This page describes the older `lcd_i2c` library. It stays in the project as a standalone,
 > blocking driver without RTOS and is still unit-tested in `tests/host`.
 
