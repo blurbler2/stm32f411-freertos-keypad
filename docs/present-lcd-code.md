@@ -12,6 +12,47 @@ questions that may come up. The full reference (wiring, API, configuration) is i
 > transfer runs via DMA, protected by a mutex, while every time of the HD44780 timing diagram
 > is met.
 
+## Short overview: how I drove the LCD
+
+Fits on one slide, e.g. as the opening or the closing slide.
+
+**Goal:** drive a 20x4 LCD under FreeRTOS so that no other task has to wait for it.
+
+1. **Connected the hardware**
+   - 20x4 LCD (HD44780 controller) with I2C module (PCF8574T) on the STM32F411 Discovery.
+   - Level shifter between 3 V (STM32) and 5 V (LCD), common ground.
+   - SDA on PB7, SCL on PB8.
+2. **Understood the basics (lecture)**
+   - HD44780: 4-bit mode, RS for command/data, E as the trigger, timing diagram, init sequence,
+     row addresses `0x00 / 0x40 / 0x14 / 0x54`.
+   - PCF8574: every I2C byte sets all 8 LCD lines. One byte takes 90 µs, so the timing is met
+     automatically.
+3. **Starting point: the provided LCD1602 library**
+   - Works, but busy-waits about 6 ms per character and blocks the CPU.
+   - No protection when several tasks write.
+   - Two bugs: `0x38` instead of `0x28`, and the data is removed too early.
+4. **Own driver `lcd1602`, RTOS-ready**
+   - Timing diagram implemented exactly: 5 I2C bytes per character.
+   - Gatekeeper task: only one task writes to the display; the others send messages into a queue
+     and never wait.
+   - Frame buffer: every 200 ms only the changed characters are sent.
+   - A mutex protects the I2C bus for further devices.
+   - DMA + semaphore: the CPU is free during the transfer. Without the DMA settings there is an
+     automatic blocking fallback.
+   - Portable: hardware-specific code in one place only.
+5. **Built into the application**
+   - Keys and the blue button appear on the LCD.
+   - Row 4 shows whether DMA is active.
+6. **Tested**
+   - On the PC: a simulated display checks the timing diagram, the init and the content.
+   - On the board: the LCD runs, and the transfers use DMA.
+7. **Set up DMA**
+   - In CubeMX: DMA channel `I2C1_TX`, I2C interrupts, priority 5; code generated and built.
+   - Confirmed on the board: row 4 shows `I2C: DMA`.
+
+**Result in one sentence:** instead of ~6 ms of CPU blocking per character, a changed character
+now costs ~1 ms of bus time, and the CPU stays free for the other tasks.
+
 ## 1. Suggested structure (about 12 minutes)
 
 | # | Part | Time | What to show |

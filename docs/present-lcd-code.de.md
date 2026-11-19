@@ -13,6 +13,47 @@ Zeilennummern beziehen sich auf Commit `7fae595`.
 > Zeichen gesendet, und die I2C-Übertragung läuft per DMA, geschützt durch einen Mutex. Dabei wird
 > jede Zeit aus dem Zeitdiagramm des HD44780 eingehalten.
 
+## Kurzübersicht: Wie ich das LCD angesteuert habe
+
+Passt auf eine Folie, z. B. als Einstieg oder als Abschluss.
+
+**Ziel:** ein 20×4-LCD unter FreeRTOS so ansteuern, dass kein anderer Task darauf warten muss.
+
+1. **Hardware angeschlossen**
+   - 20×4-LCD (Controller HD44780) mit I2C-Modul (PCF8574T) am STM32F411-Discovery.
+   - Pegelwandler zwischen 3 V (STM32) und 5 V (LCD), Masse gemeinsam.
+   - SDA an PB7, SCL an PB8.
+2. **Grundlagen verstanden (Vorlesung)**
+   - HD44780: 4-Bit-Modus, RS für Befehl/Daten, E als Auslöser, Zeitdiagramm, Init-Sequenz,
+     Zeilenadressen `0x00 / 0x40 / 0x14 / 0x54`.
+   - PCF8574: Jedes I2C-Byte setzt alle 8 LCD-Leitungen. Ein Byte dauert 90 µs, deshalb ist das
+     Timing automatisch erfüllt.
+3. **Ausgangspunkt: mitgelieferte Bibliothek LCD1602**
+   - Funktioniert, wartet aber etwa 6 ms pro Zeichen aktiv und blockiert dabei die CPU.
+   - Kein Schutz, wenn mehrere Tasks schreiben.
+   - Zwei Fehler: `0x38` statt `0x28`, und die Daten werden zu früh weggenommen.
+4. **Eigener Treiber `lcd1602`, betriebssystemtauglich**
+   - Zeitdiagramm sauber umgesetzt: 5 I2C-Bytes pro Zeichen.
+   - Gatekeeper-Task: Nur ein Task schreibt aufs Display; die anderen schicken Nachrichten in eine
+     Queue und warten nie.
+   - Bildspeicher: Alle 200 ms werden nur die geänderten Zeichen gesendet.
+   - Mutex schützt den I2C-Bus für weitere Geräte.
+   - DMA + Semaphore: Die CPU ist während der Übertragung frei. Ohne DMA-Einstellungen gibt es
+     automatisch einen blockierenden Rückfall.
+   - Portierbar: Hardwareabhängiges steht nur an einer Stelle.
+5. **In die Anwendung eingebaut**
+   - Tasten und der blaue Taster erscheinen auf dem LCD.
+   - Zeile 4 zeigt, ob DMA aktiv ist.
+6. **Getestet**
+   - Am PC: Ein simuliertes Display prüft Zeitdiagramm, Initialisierung und Inhalt.
+   - Auf dem Board: Das LCD läuft, die Übertragungen laufen per DMA.
+7. **DMA eingerichtet**
+   - In CubeMX: DMA-Kanal `I2C1_TX`, I2C-Interrupts, Priorität 5; Code erzeugt und gebaut.
+   - Auf dem Board bestätigt: Zeile 4 zeigt `I2C: DMA`.
+
+**Ergebnis in einem Satz:** Statt ~6 ms CPU-Blockade pro Zeichen kostet ein geändertes Zeichen jetzt
+~1 ms Buszeit, und die CPU bleibt dabei frei für die anderen Tasks.
+
 ## 1. Vorgeschlagener Ablauf (ca. 12 Minuten)
 
 | # | Teil | Zeit | Was du zeigst |
