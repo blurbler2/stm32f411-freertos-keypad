@@ -7,7 +7,8 @@ module, for FreeRTOS on the **STM32F411E-DISCO**. It was built from the provided
 
 - Code: [`Core/Inc/lcd1602.h`](../Core/Inc/lcd1602.h), [`Core/Src/lcd1602.c`](../Core/Src/lcd1602.c)
 - Test: [`tests/host/test_lcd1602.c`](../tests/host/test_lcd1602.c)
-- Notes for presenting the code: [present-lcd-code.md](present-lcd-code.md)
+- Notes for presenting the code: [present-lcd-code.md](present-lcd-code.md), German:
+  [present-lcd-code.de.md](present-lcd-code.de.md)
 
 | Property | How the driver does it |
 |---|---|

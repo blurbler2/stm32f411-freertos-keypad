@@ -179,6 +179,7 @@ pulled low. PA2 can be decoded as UART (115200 baud).
 │   ├── keypad-library.md           how to use the keypad library in other projects
 │   ├── lcd1602-library.md          LCD driver lcd1602: level shifter wiring, concepts, API
 │   ├── present-lcd-code.md         notes for presenting the LCD code
+│   ├── present-lcd-code.de.md      the same in German
 │   └── lcd-library.md              older LCD library lcd_i2c
 └── tests/host                      PC unit tests for the libraries (mock HAL, mock FreeRTOS)
 ```
@@ -304,7 +305,8 @@ lcd1602_print(1, 4, "world");                /* column 4, second row */
 For DMA, add the I2C TX DMA channel and the I2C event/error interrupts in CubeMX, see the comment
 at the top of `lcd1602.h`. Without them the driver works with blocking I2C.
 Wiring, background and API: [docs/lcd1602-library.md](docs/lcd1602-library.md); notes for
-presenting the code: [docs/present-lcd-code.md](docs/present-lcd-code.md).
+presenting the code: [docs/present-lcd-code.md](docs/present-lcd-code.md) (German:
+[docs/present-lcd-code.de.md](docs/present-lcd-code.de.md)).
 
 The older `lcd_i2c.c/.h` needs no RTOS, but it waits for every transfer. Copy it into another
 CubeMX project that has an I2C peripheral enabled:

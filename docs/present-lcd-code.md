@@ -1,5 +1,7 @@
 # Presenting the LCD code
 
+> German version: [present-lcd-code.de.md](present-lcd-code.de.md)
+
 Notes for presenting the `lcd1602` driver: what to show, what to say, the numbers to know and the
 questions that may come up. The full reference (wiring, API, configuration) is in
 [lcd1602-library.md](lcd1602-library.md). Line numbers refer to commit `7fae595`.
@@ -152,8 +154,9 @@ message types.
 ### 4.3 Why 5 bytes per character instead of 4 (slide 26)
 
 In the 4-byte sequence of slide 26, E rises in the **same byte** in which RS and the data are set.
-The PCF8574 switches all outputs at the same moment, so t_AS ≈ 0 instead of ≥ 140 ns. Most
-displays accept this, but it is outside the data sheet. `lcd1602` sends one extra byte first,
+The PCF8574 switches all outputs at the same moment, so t_AS ≈ 0 instead of ≥ 140 ns. This
+matters where RS changes, e.g. from the cursor command (RS = 0) to the first character (RS = 1).
+Most displays accept this, but it is outside the data sheet. `lcd1602` sends one extra byte first,
 with RS and data valid and E still low, so t_AS = 90 µs:
 
 | | After `START 0x4E` | Bytes per character | Whole row |
