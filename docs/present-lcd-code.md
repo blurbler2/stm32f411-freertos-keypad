@@ -102,6 +102,43 @@ What to say:
 - Trick from the lecture: **send only the characters that changed**. One changed character costs
   about 1 ms on the bus instead of 30 ms for the whole display.
 
+#### The four terms in simple words
+
+**`vTaskDelay(pdMS_TO_TICKS(ms) + 1)`: sleep instead of busy waiting.**
+`vTaskDelay(n)` puts the task to sleep for `n` ticks; meanwhile the CPU runs the other tasks.
+`HAL_Delay()` instead keeps checking the clock and blocks the CPU. A tick is the heartbeat of
+FreeRTOS (here 1000 per second, so 1 tick = 1 ms), and `pdMS_TO_TICKS()` converts milliseconds into
+ticks. The `+ 1` is needed because the next tick can come almost at once: `vTaskDelay(1)` lasts
+somewhere between 0 and 1 ms, with `+ 1` the task sleeps at least the requested time.
+*Picture:* a clock that only clicks on the full minute. At 10:00:59, "wake me after 1 click" means
+after one second, so you say "2 clicks" to be sure of a whole minute.
+
+**Semaphore: the signal "done".**
+One side gives it, the other side waits for it. The task starts the DMA transfer and calls
+`xSemaphoreTake()`: it sleeps without using CPU time. When the last byte is out, the interrupt
+calls `xSemaphoreGiveFromISR()` and the task wakes up. A simple variable as a flag would have to be
+checked in a loop, which is busy waiting again.
+*Picture:* the buzzer in a self-service restaurant. You sit down and get a signal when the food is
+ready, instead of asking at the counter every ten seconds.
+
+**Gatekeeper task: the only one who writes to the display.**
+The other tasks put their text into a queue and continue at once. Writing to the LCD takes two
+steps (set the cursor, write the text); if two tasks did that at the same time, one could jump in
+between and the characters would land in the wrong place. With one owner the messages are handled
+one after another. In our code this is `lcd1602_task()`.
+*Picture:* only one person writes on the whiteboard; everyone else hands in notes.
+
+**Mutex: the key to a shared resource.**
+Only the task holding the key may use the I2C bus; the others wait until it is given back
+(`xSemaphoreTake(mutex)` before and `xSemaphoreGive(mutex)` after every transfer). Unlike the
+semaphore above, which is a signal from the interrupt to the task, the same task takes and returns
+the mutex. A mutex also has priority inheritance: a low-priority task that holds the key gets a
+higher priority while an important task is waiting for it, so it finishes quickly.
+*Picture:* the key to the only bathroom.
+
+**Gatekeeper and mutex together:** the gatekeeper protects the display (who writes what, in which
+order), the mutex protects the bus, which other devices may also use.
+
 ### 3.5 Portability (slide 31)
 
 Manufacturer code only in the port. The core (protocol, bus logic, tasks) stays unchanged when

@@ -106,6 +106,45 @@ Was du sagen kannst:
 - Trick aus der Vorlesung: **nur die geänderten Zeichen senden**. Ein geändertes Zeichen kostet
   etwa 1 ms auf dem Bus statt 30 ms für das ganze Display.
 
+#### Die vier Begriffe einfach erklärt
+
+**`vTaskDelay(pdMS_TO_TICKS(ms) + 1)`: schlafen statt aktiv warten.**
+`vTaskDelay(n)` legt den Task für `n` Ticks schlafen; in der Zeit arbeitet die CPU die anderen
+Tasks ab. `HAL_Delay()` schaut dagegen ständig auf die Uhr und blockiert die CPU. Ein Tick ist der
+Herzschlag von FreeRTOS (hier 1000 pro Sekunde, also 1 Tick = 1 ms), und `pdMS_TO_TICKS()` rechnet
+Millisekunden in Ticks um. Das `+ 1` ist nötig, weil der nächste Tick fast sofort kommen kann:
+`vTaskDelay(1)` dauert irgendwo zwischen 0 und 1 ms, mit `+ 1` schläft der Task mindestens so lange
+wie gewünscht.
+*Bild:* eine Uhr, die nur zur vollen Minute klickt. Um 10:00:59 heißt „weck mich nach 1 Klick“
+schon nach einer Sekunde, deshalb sagt man „2 Klicks“, um sicher eine ganze Minute zu schlafen.
+
+**Semaphore: das Signal „fertig“.**
+Einer gibt sie, der andere wartet darauf. Der Task startet die DMA-Übertragung und ruft
+`xSemaphoreTake()` auf: Er schläft, ohne CPU-Zeit zu verbrauchen. Wenn das letzte Byte draußen
+ist, ruft der Interrupt `xSemaphoreGiveFromISR()` auf, und der Task wacht auf. Eine einfache
+Variable als Merker müsste man in einer Schleife abfragen, und das wäre wieder aktives Warten.
+*Bild:* der Pager im Selbstbedienungsrestaurant. Man setzt sich und bekommt ein Signal, wenn das
+Essen fertig ist, statt alle zehn Sekunden an der Theke zu fragen.
+
+**Gatekeeper-Task: der Einzige, der aufs Display schreibt.**
+Die anderen Tasks legen ihren Text in eine Queue und machen sofort weiter. Aufs LCD schreiben sind
+zwei Schritte (Cursor setzen, Text schreiben); täten das zwei Tasks gleichzeitig, könnte einer
+dazwischenspringen, und die Zeichen landen an der falschen Stelle. Mit nur einem Besitzer werden
+die Nachrichten der Reihe nach abgearbeitet. In unserem Code ist das `lcd1602_task()`.
+*Bild:* Nur eine Person schreibt auf das Whiteboard; alle anderen geben Zettel ab.
+
+**Mutex: der Schlüssel zu einem gemeinsamen Betriebsmittel.**
+Nur der Task mit dem Schlüssel darf den I2C-Bus benutzen; die anderen warten, bis er zurückgegeben
+wird (`xSemaphoreTake(mutex)` vor und `xSemaphoreGive(mutex)` nach jeder Übertragung). Anders als
+die Semaphore oben, die ein Signal vom Interrupt an den Task ist, nimmt und gibt derselbe Task den
+Mutex. Ein Mutex hat außerdem Prioritätsvererbung: Hält ein unwichtiger Task den Schlüssel,
+während ein wichtiger darauf wartet, bekommt der unwichtige vorübergehend eine höhere Priorität
+und wird schnell fertig.
+*Bild:* der Schlüssel zum einzigen Badezimmer.
+
+**Gatekeeper und Mutex zusammen:** Der Gatekeeper schützt das Display (wer schreibt was, in welcher
+Reihenfolge), der Mutex schützt den Bus, den auch andere Geräte benutzen können.
+
 ### 3.5 Portierbarkeit (Folie 31)
 
 Herstellercode nur im Port. Der Kern (Protokoll, Bus-Logik, Tasks) bleibt unverändert, wenn der
